@@ -239,7 +239,3 @@ Diese Implementierung versteht sich jedoch als **eigene, reduzierte und lokal ko
 Die Nutzung erfolgt auf eigenes Risiko. Das Skript ist ein nicht offizielles Hilfsmittel zur Browser-Automatisierung und steht in keiner Verbindung zur ING. Änderungen an der Website können die Funktion jederzeit beeinflussen.
 
 Vor produktiver Nutzung sollte das Verhalten immer mit wenigen Dokumenten getestet werden. Besonders bei Bankdokumenten sind Vorsicht, lokale Kontrolle und ein bewusst enger Einsatzbereich sinnvoll.
-
-## Lizenz
-
-Empfohlen wird eine klare Repository-Lizenz, z. B. MIT oder eine private interne Nutzung ohne Veröffentlichung. Wenn fremde Vorlagen als Inspiration dienten, sollte deren Ursprung in Commit-Historie oder Projektdokumentation sauber eingeordnet werden, auch wenn die aktuelle Fassung eigenständig weiterentwickelt wurde.
