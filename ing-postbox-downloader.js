@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ING Postbox Bulk Download
 // @namespace    local.ing.postbox.bulkdownload
-// @version      0.2.0
+// @version      0.3.0
 // @description  Lädt sichtbare Dokumente aus der ING Postbox nacheinander per nativer Browser-Aktion herunter.
 // @match        https://banking.ing.de/app/postbox/postbox*
 // @match        https://banking.ing.de/app/postbox/postbox_archiv*
@@ -14,22 +14,14 @@
   'use strict';
 
   const SCRIPT_NAME = 'ING Postbox Bulk Download';
+  const PANEL_ID = 'ing-postbox-bulkdownload-panel';
   const BUTTON_LABEL_START = 'Alle herunterladen';
   const BUTTON_LABEL_STOP = 'Abbrechen';
 
   const STORAGE_KEYS = {
-    filenameTemplate: 'ing.filenameTemplate',
-    useOriginalFilename: 'ing.useOriginalFilename',
     delayMs: 'ing.delayMs',
     dryRun: 'ing.dryRun',
     debug: 'ing.debug',
-  };
-
-  const state = {
-    running: false,
-    abortRequested: false,
-    processed: 0,
-    total: 0,
   };
 
   const config = {
@@ -38,10 +30,23 @@
     cellSelector: ':scope > span.ibbr-table-cell:not(:last-child)',
     interactiveSelector: 'a, button, [role="button"]',
     toggleButtonSelector: 'button[aria-label="Weitere Funktionen"]',
-    defaultFilenameTemplate: 'YYYY-MM-DD_ART_BETREFF',
     defaultDelayMs: 1500,
     defaultDryRun: true,
     defaultDebug: true,
+    maxBootstrapAttempts: 40,
+    bootstrapIntervalMs: 1000,
+    mutationDebounceMs: 600,
+  };
+
+  const state = {
+    running: false,
+    abortRequested: false,
+    processed: 0,
+    total: 0,
+    observer: null,
+    bootstrapTimer: null,
+    mutationTimer: null,
+    currentButton: null,
   };
 
   function getSetting(key, fallback) {
@@ -78,60 +83,6 @@
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  function sanitizeFilenamePart(value) {
-    return String(value || '')
-      .trim()
-      .replace(/\s+/g, '_')
-      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '');
-  }
-
-  function normalizeDateParts(rawValue) {
-    const text = String(rawValue || '').trim();
-    const parts = text.split(/[.\-/]/).map(p => p.trim());
-
-    if (parts.length !== 3) {
-      return { DD: '00', MM: '00', YYYY: '0000', raw: text };
-    }
-
-    const [DD, MM, YYYY] = parts;
-    return {
-      DD: DD.padStart(2, '0'),
-      MM: MM.padStart(2, '0'),
-      YYYY,
-      raw: text,
-    };
-  }
-
-  function buildFilename(doc, template, useOriginalFilename) {
-    if (useOriginalFilename && doc.originalFilename) {
-      return doc.originalFilename;
-    }
-
-    const dateParts = normalizeDateParts(doc.date);
-    const replacements = {
-      DD: dateParts.DD,
-      MM: dateParts.MM,
-      YYYY: dateParts.YYYY,
-      ART: sanitizeFilenamePart(doc.type || 'Dokument'),
-      BETREFF: sanitizeFilenamePart(doc.subject || 'Ohne_Betreff'),
-    };
-
-    let name = template;
-    for (const [token, value] of Object.entries(replacements)) {
-      name = name.replaceAll(token, value);
-    }
-
-    name = sanitizeFilenamePart(name);
-
-    if (!name.toLowerCase().endsWith('.pdf')) {
-      name += '.pdf';
-    }
-
-    return name;
-  }
-
   function toAbsoluteIngUrl(href) {
     if (!href) return '';
     try {
@@ -163,7 +114,6 @@
       name: el.getAttribute?.('name') || '',
       role: el.getAttribute?.('role') || '',
       toggleSelector: el.getAttribute?.('data-toggle-selector') || '',
-      outerHTML: el.outerHTML,
     };
   }
 
@@ -173,7 +123,6 @@
 
   function findDownloadLink(row) {
     const candidates = getInteractiveCandidates(row);
-
     const links = candidates.filter(el => el.tagName === 'A');
 
     const directDownloadLink =
@@ -202,7 +151,7 @@
     return directDownloadLink;
   }
 
-  function parseRow(row) {
+  function parseRow(row, index) {
     const cells = Array.from(row.querySelectorAll(config.cellSelector))
       .map(cell => cell.textContent.trim());
 
@@ -211,16 +160,15 @@
 
     const href = link?.getAttribute('href') || '';
     const absoluteUrl = toAbsoluteIngUrl(href);
-    const originalFilename = absoluteUrl ? decodeURIComponent(absoluteUrl.split('/').pop() || '') : '';
 
     return {
+      index,
       row,
       rawCells: cells,
       type: cells[0] || '',
       subject: cells[1] || '',
       date: cells[2] || '',
       url: absoluteUrl,
-      originalFilename,
       linkElement: link,
       toggleButtonElement: toggleButton,
     };
@@ -228,7 +176,9 @@
 
   function collectDocuments() {
     const rows = getVisibleRows();
-    return rows.map(parseRow).filter(doc => !!doc.linkElement);
+    return rows
+      .map((row, index) => parseRow(row, index))
+      .filter(doc => !!doc.linkElement);
   }
 
   function clickElement(el) {
@@ -300,15 +250,41 @@
     return wrapper;
   }
 
-  function updateStartButton(button) {
+  function ensurePanelStyle(panel) {
+    panel.style.cssText = 'margin:12px 0 20px 0;padding:10px 0;';
+  }
+
+  function updateStartButton(button = state.currentButton) {
     if (!button) return;
 
     if (!state.running) {
       button.textContent = BUTTON_LABEL_START;
+      button.style.opacity = '1';
       return;
     }
 
     button.textContent = `${BUTTON_LABEL_STOP} (${state.processed}/${state.total})`;
+    button.style.opacity = '1';
+  }
+
+  function buildStatusText() {
+    const docs = collectDocuments();
+    return `Sichtbare Dokumente: ${docs.length}`;
+  }
+
+  function createStatusElement() {
+    const status = document.createElement('div');
+    status.id = `${PANEL_ID}-status`;
+    status.style.cssText = 'font-size:13px;color:#555;margin:4px 0 10px 0;';
+    status.textContent = buildStatusText();
+    return status;
+  }
+
+  function refreshStatusElement() {
+    const status = document.getElementById(`${PANEL_ID}-status`);
+    if (status && !state.running) {
+      status.textContent = buildStatusText();
+    }
   }
 
   async function runDownloadQueue(button) {
@@ -318,8 +294,6 @@
       return;
     }
 
-    const filenameTemplate = getSetting(STORAGE_KEYS.filenameTemplate, config.defaultFilenameTemplate);
-    const useOriginalFilename = getSetting(STORAGE_KEYS.useOriginalFilename, false);
     const delayMs = getSetting(STORAGE_KEYS.delayMs, config.defaultDelayMs);
     const dryRun = getSetting(STORAGE_KEYS.dryRun, config.defaultDryRun);
 
@@ -327,6 +301,7 @@
 
     if (!docs.length) {
       alert('Keine sichtbaren Dokumente mit Download-Link gefunden.');
+      refreshStatusElement();
       return;
     }
 
@@ -334,7 +309,15 @@
     state.abortRequested = false;
     state.processed = 0;
     state.total = docs.length;
+    state.currentButton = button;
     updateStartButton(button);
+
+    const status = document.getElementById(`${PANEL_ID}-status`);
+    if (status) {
+      status.textContent = dryRun
+        ? `Dry-Run aktiv: ${docs.length} sichtbare Dokumente erkannt.`
+        : `Starte Download von ${docs.length} sichtbaren Dokumenten...`;
+    }
 
     log('Gefundene Dokumente:', docs);
 
@@ -345,13 +328,11 @@
           break;
         }
 
-        const filename = buildFilename(doc, filenameTemplate, useOriginalFilename);
-
         log('Verarbeite Dokument', {
+          index: doc.index,
           type: doc.type,
           subject: doc.subject,
           date: doc.date,
-          filename,
           href: doc.url,
           dryRun,
         });
@@ -363,14 +344,34 @@
 
         state.processed += 1;
         updateStartButton(button);
+
+        if (status) {
+          status.textContent = dryRun
+            ? `Dry-Run: ${state.processed}/${state.total} geprüft`
+            : `Download: ${state.processed}/${state.total}`;
+        }
       }
     } catch (err) {
       console.error(`[${SCRIPT_NAME}] Fehler`, err);
       alert(`Fehler beim Download: ${err.message}`);
     } finally {
+      const wasAborted = state.abortRequested;
+
       state.running = false;
       state.abortRequested = false;
       updateStartButton(button);
+
+      if (status) {
+        if (wasAborted) {
+          status.textContent = `Abgebrochen bei ${state.processed}/${state.total}.`;
+        } else if (dryRun) {
+          status.textContent = `Dry-Run abgeschlossen: ${state.processed}/${state.total} geprüft.`;
+        } else {
+          status.textContent = `Download abgeschlossen: ${state.processed}/${state.total}.`;
+        }
+      }
+
+      refreshStatusElement();
     }
   }
 
@@ -382,29 +383,19 @@
       return false;
     }
 
-    if (document.getElementById('ing-postbox-bulkdownload-panel')) {
+    const existingPanel = document.getElementById(PANEL_ID);
+    if (existingPanel) {
+      ensurePanelStyle(existingPanel);
+      refreshStatusElement();
       return true;
     }
 
     const panel = document.createElement('div');
-    panel.id = 'ing-postbox-bulkdownload-panel';
-    panel.style.cssText = 'margin:12px 0 20px 0;padding:10px 0;';
+    panel.id = PANEL_ID;
+    ensurePanelStyle(panel);
 
     const startButton = createButton(BUTTON_LABEL_START, () => runDownloadQueue(startButton));
-
-    const templateButton = createButton('Dateinamen ändern', () => {
-      const current = getSetting(STORAGE_KEYS.filenameTemplate, config.defaultFilenameTemplate);
-      const next = prompt('Dateinamens-Template eingeben (z. B. YYYY-MM-DD_ART_BETREFF):', current);
-      if (next !== null && next.trim()) {
-        setSetting(STORAGE_KEYS.filenameTemplate, next.trim());
-      }
-    });
-
-    const originalNameCheckbox = createCheckbox(
-      'Original-Dateinamen verwenden',
-      getSetting(STORAGE_KEYS.useOriginalFilename, false),
-      checked => setSetting(STORAGE_KEYS.useOriginalFilename, checked)
-    );
+    state.currentButton = startButton;
 
     const dryRunCheckbox = createCheckbox(
       'Dry-Run (kein Download)',
@@ -424,13 +415,14 @@
       value => setSetting(STORAGE_KEYS.delayMs, value)
     );
 
+    const status = createStatusElement();
+
     panel.append(
       startButton,
-      templateButton,
-      originalNameCheckbox,
       dryRunCheckbox,
       debugCheckbox,
-      delayInput
+      delayInput,
+      status
     );
 
     anchor.insertAdjacentElement('afterend', panel);
@@ -439,12 +431,47 @@
     return true;
   }
 
+  function scheduleUiRefresh() {
+    if (state.mutationTimer) {
+      clearTimeout(state.mutationTimer);
+    }
+
+    state.mutationTimer = setTimeout(() => {
+      installUi();
+      refreshStatusElement();
+    }, config.mutationDebounceMs);
+  }
+
+  function installMutationObserver() {
+    if (state.observer) {
+      return;
+    }
+
+    state.observer = new MutationObserver(() => {
+      scheduleUiRefresh();
+    });
+
+    state.observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    log('MutationObserver installiert');
+  }
+
   function bootstrap(attempt = 0) {
     const installed = installUi();
-    if (installed) return;
 
-    if (attempt < 20) {
-      setTimeout(() => bootstrap(attempt + 1), 1000);
+    if (installed) {
+      installMutationObserver();
+      return;
+    }
+
+    if (attempt < config.maxBootstrapAttempts) {
+      state.bootstrapTimer = setTimeout(
+        () => bootstrap(attempt + 1),
+        config.bootstrapIntervalMs
+      );
     } else {
       warn('UI konnte nicht installiert werden. Selektoren prüfen.');
     }
