@@ -18,6 +18,8 @@ The project is explicitly focused on **self-development and transparency**. Publ
 - Configurable delay between downloads
 - Debug logging for DOM analysis and troubleshooting
 - Automatic UI re-initialization when ING dynamically re-renders parts of the page
+- Clean injected control panel with English-only labels, tooltips, alerts, and log messages
+- Compact status badge for idle, running, success, warning, and error states
 
 ## Technical Approach
 
@@ -26,6 +28,8 @@ The script runs as a Violentmonkey userscript directly in the browser on the ING
 Document rows are collected using DOM selectors, and the existing download link is identified within each row. For direct child selectors inside a row, `:scope` is used so that selection remains correctly relative to the current element.
 
 The actual download is not triggered via `fetch()`, but through a native click on the detected element. This matches the UI-driven workflow of the ING postbox more reliably.
+
+To keep the injected UI stable even when ING re-renders parts of the page dynamically, the script reattaches its panel through a `MutationObserver`-based refresh strategy.
 
 ## Requirements
 
@@ -52,7 +56,7 @@ To use the script, the following is required:
 2. Optionally enable dry-run first.
 3. Click **"Download all"**.
 4. The script processes all currently visible documents one after another.
-5. Clicking the same button again aborts the process.
+5. Clicking the same button again aborts the process after the current step.
 
 Important: The script only processes **currently visible documents**. It intentionally does not perform pagination or automatically load additional pages.
 
@@ -66,19 +70,23 @@ The delay between two downloads can be configured. A small delay is useful so th
 
 ### Debug Logs
 
-If **Debug Logs** are enabled, the script writes additional information to the browser console. This is useful for analyzing DOM changes, selector issues, or elements that are no longer detected correctly.
+If **Debug logs** are enabled, the script writes additional information to the browser console. This is useful for analyzing DOM changes, selector issues, or elements that are no longer detected correctly.
+
+### Status Badge
+
+The injected panel includes a compact status badge that reflects the current script state. Depending on the situation, it shows the number of visible documents, current progress, completion, cancellation, or an error state.
 
 ## UI Elements
 
-The script injects a small control panel into the postbox. As of version 0.3, it includes:
+The script injects a small control panel into the postbox. As of version 0.5, it includes:
 
 | Element | Function |
 |---|---|
 | Download all | Starts the sequential download of all visible documents. During execution, the same button is also used to abort the process. |
-| Dry-run (no download) | Only verifies document detection without triggering actual downloads. |
-| Debug Logs | Enables additional console output for analysis and troubleshooting. |
+| Dry run (no download) | Only verifies document detection without triggering actual downloads. |
+| Debug logs | Enables additional console output for analysis and troubleshooting. |
 | Delay (ms) | Defines the waiting time between two download actions. |
-| Status line | Shows the number of visible documents as well as progress, completion, or cancellation state. |
+| Status badge | Shows the number of visible documents as well as progress, completion, cancellation, or error state. |
 
 ## Limitations
 
@@ -118,7 +126,7 @@ The internal structure of the script is intentionally simple:
 - **State**: run status, abort flag, progress, observer references
 - **DOM detection**: collecting rows and finding the download link for each document
 - **Action**: native click on the detected element
-- **UI**: control panel with start, dry-run, debug, and delay options
+- **UI**: control panel with start, dry-run, debug, delay, tooltip, and status badge
 - **Reactivity**: `MutationObserver` to reattach the panel after DOM updates
 
 ## Typical Code Flow
@@ -170,7 +178,7 @@ If the script stops working after changes, these points should be checked first:
 | Problem | Likely Cause | Hint |
 |---|---|---|
 | No button visible | UI anchor not found | Check whether `.account-filters` still exists |
-| Dry-run finds 0 documents | Table or cell selectors no longer match | Inspect the DOM in Firefox DevTools |
+| Dry run finds 0 documents | Table or cell selectors no longer match | Inspect the DOM in Firefox DevTools |
 | Download does not start | ING changed link or event structure | Analyze link candidates with debug logs |
 | UI disappears after changing filters | DOM was dynamically re-rendered | Check observer and selector logic |
 
@@ -200,6 +208,10 @@ The file name is accepted as provided by the browser or server, not artificially
 
 The current version works without jQuery or additional UI libraries. This simplifies maintenance, debugging, and control over the executed code.
 
+### English UI Texts
+
+All injected UI labels, tooltips, alerts, and log messages are in English. This keeps the script behavior and documentation aligned and makes the code easier to maintain in a single language.
+
 ## Development Notes
 
 For script changes, the following workflow is recommended:
@@ -210,6 +222,8 @@ For script changes, the following workflow is recommended:
 4. Watch the console.
 5. Only then run a real test with a small number of visible documents.
 6. Use it more broadly only after the test succeeds.
+
+If a change affects user-facing behavior, configuration, or visible UI text, the README should be updated in the same revision.
 
 ## Non-Goals
 
