@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ING Postbox Bulk Download
 // @namespace    local.ing.postbox.bulkdownload
-// @version      0.3.0
-// @description  Lädt sichtbare Dokumente aus der ING Postbox nacheinander per nativer Browser-Aktion herunter.
+// @version      0.4.0
+// @description  Sequentially download all visible documents from the ING Postbox
 // @match        https://banking.ing.de/app/postbox/postbox*
 // @match        https://banking.ing.de/app/postbox/postbox_archiv*
 // @grant        GM_getValue
@@ -15,8 +15,8 @@
 
   const SCRIPT_NAME = 'ING Postbox Bulk Download';
   const PANEL_ID = 'ing-postbox-bulkdownload-panel';
-  const BUTTON_LABEL_START = 'Alle herunterladen';
-  const BUTTON_LABEL_STOP = 'Abbrechen';
+  const BUTTON_LABEL_START = 'Download all';
+  const BUTTON_LABEL_STOP = 'Abort';
 
   const STORAGE_KEYS = {
     delayMs: 'ing.delayMs',
@@ -61,7 +61,7 @@
     try {
       GM_setValue(key, value);
     } catch (err) {
-      console.warn(`[${SCRIPT_NAME}] Konnte Setting nicht speichern`, key, err);
+      console.warn(`[${SCRIPT_NAME}] Could not persist setting`, key, err);
     }
   }
 
@@ -143,9 +143,9 @@
       }) || null;
 
     if (isDebugEnabled()) {
-      log('Kandidaten in Zeile:', candidates.map(describeElement));
-      log('Gewählter Download-Link:', describeElement(directDownloadLink));
-      log('Gewählter Toggle-Button:', describeElement(findToggleButton(row)));
+      log('Row candidates:', candidates.map(describeElement));
+      log('Selected download link:', describeElement(directDownloadLink));
+      log('Selected toggle button:', describeElement(findToggleButton(row)));
     }
 
     return directDownloadLink;
@@ -183,7 +183,7 @@
 
   function clickElement(el) {
     if (!el) {
-      throw new Error('Element zum Klicken fehlt.');
+      throw new Error('Missing element to click.');
     }
 
     el.click();
@@ -191,7 +191,7 @@
 
   async function executeDownload(doc) {
     if (!doc.linkElement) {
-      throw new Error('Kein Download-Link für Dokument gefunden.');
+      throw new Error('No download link found for document.');
     }
 
     clickElement(doc.linkElement);
@@ -269,7 +269,7 @@
 
   function buildStatusText() {
     const docs = collectDocuments();
-    return `Sichtbare Dokumente: ${docs.length}`;
+    return `Visible documents: ${docs.length}`;
   }
 
   function createStatusElement() {
@@ -300,7 +300,7 @@
     const docs = collectDocuments();
 
     if (!docs.length) {
-      alert('Keine sichtbaren Dokumente mit Download-Link gefunden.');
+      alert('No visible documents with a download link were found.');
       refreshStatusElement();
       return;
     }
@@ -315,20 +315,20 @@
     const status = document.getElementById(`${PANEL_ID}-status`);
     if (status) {
       status.textContent = dryRun
-        ? `Dry-Run aktiv: ${docs.length} sichtbare Dokumente erkannt.`
-        : `Starte Download von ${docs.length} sichtbaren Dokumenten...`;
+        ? `Dry run enabled: ${docs.length} visible documents detected.`
+        : `Starting download of ${docs.length} visible documents...`;
     }
 
-    log('Gefundene Dokumente:', docs);
+    log('Detected documents:', docs);
 
     try {
       for (const doc of docs) {
         if (state.abortRequested) {
-          log('Abbruch angefordert.');
+          log('Abort requested.');
           break;
         }
 
-        log('Verarbeite Dokument', {
+        log('Processing document', {
           index: doc.index,
           type: doc.type,
           subject: doc.subject,
@@ -347,13 +347,13 @@
 
         if (status) {
           status.textContent = dryRun
-            ? `Dry-Run: ${state.processed}/${state.total} geprüft`
+            ? `Dry run: checked ${state.processed}/${state.total}`
             : `Download: ${state.processed}/${state.total}`;
         }
       }
     } catch (err) {
-      console.error(`[${SCRIPT_NAME}] Fehler`, err);
-      alert(`Fehler beim Download: ${err.message}`);
+      console.error(`[${SCRIPT_NAME}] Error`, err);
+      alert(`Download error: ${err.message}`);
     } finally {
       const wasAborted = state.abortRequested;
 
@@ -363,11 +363,11 @@
 
       if (status) {
         if (wasAborted) {
-          status.textContent = `Abgebrochen bei ${state.processed}/${state.total}.`;
+          status.textContent = `Aborted at ${state.processed}/${state.total}.`;
         } else if (dryRun) {
-          status.textContent = `Dry-Run abgeschlossen: ${state.processed}/${state.total} geprüft.`;
+          status.textContent = `Dry run finished: checked ${state.processed}/${state.total}.`;
         } else {
-          status.textContent = `Download abgeschlossen: ${state.processed}/${state.total}.`;
+          status.textContent = `Download finished: ${state.processed}/${state.total}.`;
         }
       }
 
@@ -379,7 +379,7 @@
     const anchor = document.querySelector(config.uiAnchorSelector);
 
     if (!anchor) {
-      log('UI-Anker nicht gefunden:', config.uiAnchorSelector);
+      log('UI anchor not found:', config.uiAnchorSelector);
       return false;
     }
 
@@ -398,13 +398,13 @@
     state.currentButton = startButton;
 
     const dryRunCheckbox = createCheckbox(
-      'Dry-Run (kein Download)',
+      'Dry run (no download)',
       getSetting(STORAGE_KEYS.dryRun, config.defaultDryRun),
       checked => setSetting(STORAGE_KEYS.dryRun, checked)
     );
 
     const debugCheckbox = createCheckbox(
-      'Debug-Logs',
+      'Debug logs',
       getSetting(STORAGE_KEYS.debug, config.defaultDebug),
       checked => setSetting(STORAGE_KEYS.debug, checked)
     );
@@ -427,7 +427,7 @@
 
     anchor.insertAdjacentElement('afterend', panel);
 
-    log('UI installiert');
+    log('UI installed');
     return true;
   }
 
@@ -456,7 +456,7 @@
       subtree: true,
     });
 
-    log('MutationObserver installiert');
+    log('MutationObserver installed');
   }
 
   function bootstrap(attempt = 0) {
@@ -473,7 +473,7 @@
         config.bootstrapIntervalMs
       );
     } else {
-      warn('UI konnte nicht installiert werden. Selektoren prüfen.');
+      warn('UI could not be installed. Please verify the selectors.');
     }
   }
 
