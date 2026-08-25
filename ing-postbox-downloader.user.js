@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ING Postbox Bulk Download
 // @namespace    local.ing.postbox.bulkdownload
-// @version      0.4.0
+// @version      0.5.0
 // @description  Sequentially download all visible documents from the ING Postbox
 // @match        https://banking.ing.de/app/postbox/postbox*
 // @match        https://banking.ing.de/app/postbox/postbox_archiv*
@@ -15,6 +15,8 @@
 
   const SCRIPT_NAME = 'ING Postbox Bulk Download';
   const PANEL_ID = 'ing-postbox-bulkdownload-panel';
+  const STYLE_ID = 'ing-postbox-bulkdownload-style';
+
   const BUTTON_LABEL_START = 'Download all';
   const BUTTON_LABEL_STOP = 'Abort';
 
@@ -197,27 +199,154 @@
     clickElement(doc.linkElement);
   }
 
-  function createButton(label, onClick) {
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) {
+      return;
+    }
+
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      #${PANEL_ID} {
+        margin: 12px 0 20px 0;
+        padding: 12px 14px;
+        border: 1px solid #d8dde6;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: #1f2937;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 12px;
+        font-family: Arial, sans-serif;
+      }
+
+      #${PANEL_ID} .ipbd-primary-btn {
+        appearance: none;
+        border: 1px solid #c9d2df;
+        background: #ffffff;
+        color: #111827;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      #${PANEL_ID} .ipbd-primary-btn:hover {
+        background: #f1f5f9;
+        border-color: #b8c4d6;
+      }
+
+      #${PANEL_ID} .ipbd-primary-btn:focus-visible {
+        outline: 2px solid #2563eb;
+        outline-offset: 2px;
+      }
+
+      #${PANEL_ID} .ipbd-checkbox,
+      #${PANEL_ID} .ipbd-number {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #374151;
+      }
+
+      #${PANEL_ID} .ipbd-checkbox {
+        cursor: pointer;
+        user-select: none;
+      }
+
+      #${PANEL_ID} .ipbd-checkbox input {
+        cursor: pointer;
+      }
+
+      #${PANEL_ID} .ipbd-number input {
+        width: 90px;
+        padding: 5px 7px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 13px;
+        background: #fff;
+        color: #111827;
+      }
+
+      #${PANEL_ID} .ipbd-status {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #e8eef8;
+        color: #1e3a8a;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      #${PANEL_ID} .ipbd-status[data-variant="idle"] {
+        background: #eef2f7;
+        color: #334155;
+      }
+
+      #${PANEL_ID} .ipbd-status[data-variant="running"] {
+        background: #e0f2fe;
+        color: #075985;
+      }
+
+      #${PANEL_ID} .ipbd-status[data-variant="success"] {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      #${PANEL_ID} .ipbd-status[data-variant="warning"] {
+        background: #fef3c7;
+        color: #92400e;
+      }
+
+      #${PANEL_ID} .ipbd-status[data-variant="error"] {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      #${PANEL_ID} .ipbd-status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.85;
+        flex: 0 0 auto;
+      }
+
+      @media (max-width: 900px) {
+        #${PANEL_ID} .ipbd-status {
+          width: 100%;
+          margin-left: 0;
+          justify-content: center;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function createButton(label, onClick, title = '') {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
-    btn.style.cssText = [
-      'margin-right:10px',
-      'margin-bottom:12px',
-      'padding:8px 14px',
-      'border-radius:6px',
-      'border:1px solid #d0d0d0',
-      'background:#f7f7f7',
-      'cursor:pointer',
-      'font-size:14px'
-    ].join(';');
+    btn.className = 'ipbd-primary-btn';
+    if (title) {
+      btn.title = title;
+    }
     btn.addEventListener('click', onClick);
     return btn;
   }
 
   function createCheckbox(labelText, checked, onChange) {
     const wrapper = document.createElement('label');
-    wrapper.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin-right:12px;margin-bottom:12px;font-size:14px;cursor:pointer;';
+    wrapper.className = 'ipbd-checkbox';
 
     const input = document.createElement('input');
     input.type = 'checkbox';
@@ -233,7 +362,7 @@
 
   function createNumberInput(labelText, initialValue, onChange) {
     const wrapper = document.createElement('label');
-    wrapper.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin-right:12px;margin-bottom:12px;font-size:14px;';
+    wrapper.className = 'ipbd-number';
 
     const text = document.createElement('span');
     text.textContent = labelText;
@@ -243,15 +372,10 @@
     input.min = '0';
     input.step = '100';
     input.value = String(initialValue);
-    input.style.cssText = 'width:90px;padding:4px 6px;';
     input.addEventListener('change', () => onChange(Number(input.value) || 0));
 
     wrapper.append(text, input);
     return wrapper;
-  }
-
-  function ensurePanelStyle(panel) {
-    panel.style.cssText = 'margin:12px 0 20px 0;padding:10px 0;';
   }
 
   function updateStartButton(button = state.currentButton) {
@@ -259,12 +383,29 @@
 
     if (!state.running) {
       button.textContent = BUTTON_LABEL_START;
-      button.style.opacity = '1';
+      button.title = 'Start a sequential download of all currently visible documents';
       return;
     }
 
     button.textContent = `${BUTTON_LABEL_STOP} (${state.processed}/${state.total})`;
-    button.style.opacity = '1';
+    button.title = 'Click again to stop after the current step';
+  }
+
+  function getStatusElement() {
+    return document.getElementById(`${PANEL_ID}-status`);
+  }
+
+  function setStatus(text, variant = 'idle') {
+    const status = getStatusElement();
+    if (!status) return;
+
+    status.dataset.variant = variant;
+    const label = status.querySelector('.ipbd-status-text');
+    if (label) {
+      label.textContent = text;
+    } else {
+      status.textContent = text;
+    }
   }
 
   function buildStatusText() {
@@ -275,15 +416,24 @@
   function createStatusElement() {
     const status = document.createElement('div');
     status.id = `${PANEL_ID}-status`;
-    status.style.cssText = 'font-size:13px;color:#555;margin:4px 0 10px 0;';
-    status.textContent = buildStatusText();
+    status.className = 'ipbd-status';
+    status.dataset.variant = 'idle';
+
+    const dot = document.createElement('span');
+    dot.className = 'ipbd-status-dot';
+    dot.setAttribute('aria-hidden', 'true');
+
+    const text = document.createElement('span');
+    text.className = 'ipbd-status-text';
+    text.textContent = buildStatusText();
+
+    status.append(dot, text);
     return status;
   }
 
   function refreshStatusElement() {
-    const status = document.getElementById(`${PANEL_ID}-status`);
-    if (status && !state.running) {
-      status.textContent = buildStatusText();
+    if (!state.running) {
+      setStatus(buildStatusText(), 'idle');
     }
   }
 
@@ -291,6 +441,7 @@
     if (state.running) {
       state.abortRequested = true;
       updateStartButton(button);
+      setStatus(`Stopping after ${state.processed}/${state.total}...`, 'warning');
       return;
     }
 
@@ -301,6 +452,7 @@
 
     if (!docs.length) {
       alert('No visible documents with a download link were found.');
+      setStatus('No downloadable documents found', 'error');
       refreshStatusElement();
       return;
     }
@@ -312,12 +464,12 @@
     state.currentButton = button;
     updateStartButton(button);
 
-    const status = document.getElementById(`${PANEL_ID}-status`);
-    if (status) {
-      status.textContent = dryRun
-        ? `Dry run enabled: ${docs.length} visible documents detected.`
-        : `Starting download of ${docs.length} visible documents...`;
-    }
+    setStatus(
+      dryRun
+        ? `Dry run started with ${docs.length} visible documents`
+        : `Starting download of ${docs.length} visible documents`,
+      'running'
+    );
 
     log('Detected documents:', docs);
 
@@ -345,14 +497,16 @@
         state.processed += 1;
         updateStartButton(button);
 
-        if (status) {
-          status.textContent = dryRun
+        setStatus(
+          dryRun
             ? `Dry run: checked ${state.processed}/${state.total}`
-            : `Download: ${state.processed}/${state.total}`;
-        }
+            : `Download: ${state.processed}/${state.total}`,
+          'running'
+        );
       }
     } catch (err) {
       console.error(`[${SCRIPT_NAME}] Error`, err);
+      setStatus(`Error after ${state.processed}/${state.total}`, 'error');
       alert(`Download error: ${err.message}`);
     } finally {
       const wasAborted = state.abortRequested;
@@ -361,17 +515,17 @@
       state.abortRequested = false;
       updateStartButton(button);
 
-      if (status) {
-        if (wasAborted) {
-          status.textContent = `Aborted at ${state.processed}/${state.total}.`;
-        } else if (dryRun) {
-          status.textContent = `Dry run finished: checked ${state.processed}/${state.total}.`;
-        } else {
-          status.textContent = `Download finished: ${state.processed}/${state.total}.`;
-        }
+      if (wasAborted) {
+        setStatus(`Aborted at ${state.processed}/${state.total}`, 'warning');
+      } else if (dryRun) {
+        setStatus(`Dry run finished: checked ${state.processed}/${state.total}`, 'success');
+      } else {
+        setStatus(`Download finished: ${state.processed}/${state.total}`, 'success');
       }
 
-      refreshStatusElement();
+      window.setTimeout(() => {
+        refreshStatusElement();
+      }, 2500);
     }
   }
 
@@ -383,18 +537,22 @@
       return false;
     }
 
+    ensureStyles();
+
     const existingPanel = document.getElementById(PANEL_ID);
     if (existingPanel) {
-      ensurePanelStyle(existingPanel);
       refreshStatusElement();
       return true;
     }
 
     const panel = document.createElement('div');
     panel.id = PANEL_ID;
-    ensurePanelStyle(panel);
 
-    const startButton = createButton(BUTTON_LABEL_START, () => runDownloadQueue(startButton));
+    const startButton = createButton(
+      BUTTON_LABEL_START,
+      () => runDownloadQueue(startButton),
+      'Start a sequential download of all currently visible documents'
+    );
     state.currentButton = startButton;
 
     const dryRunCheckbox = createCheckbox(
