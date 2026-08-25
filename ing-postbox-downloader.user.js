@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ING Postbox Bulk Download
 // @namespace    local.ing.postbox.bulkdownload
-// @version      0.5.0
+// @version      0.6.0
 // @description  Sequentially download all visible documents from the ING Postbox
 // @match        https://banking.ing.de/app/postbox/postbox*
 // @match        https://banking.ing.de/app/postbox/postbox_archiv*
@@ -33,8 +33,9 @@
     interactiveSelector: 'a, button, [role="button"]',
     toggleButtonSelector: 'button[aria-label="Weitere Funktionen"]',
     defaultDelayMs: 1500,
+    minDelayMs: 300, // safety floor to prevent accidental download flooding
     defaultDryRun: true,
-    defaultDebug: true,
+    defaultDebug: false, // safer default: debug logging is opt-in
     maxBootstrapAttempts: 40,
     bootstrapIntervalMs: 1000,
     mutationDebounceMs: 600,
@@ -67,8 +68,11 @@
     }
   }
 
+  // Reads the debug flag with a strict boolean check, falling back to the default
+  // if the stored value was corrupted or manually edited into an unexpected type.
   function isDebugEnabled() {
-    return !!getSetting(STORAGE_KEYS.debug, config.defaultDebug);
+    const raw = getSetting(STORAGE_KEYS.debug, config.defaultDebug);
+    return raw === true || raw === false ? raw : config.defaultDebug;
   }
 
   function log(...args) {
@@ -92,6 +96,40 @@
     } catch {
       return href;
     }
+  }
+
+  // Validates that a candidate href is same-origin and structurally looks like
+  // a document download, instead of trusting text/aria heuristics alone.
+  // This guards against accidentally clicking a destructive or unrelated
+  // action if ING changes wording, icons, or link structure in the postbox UI.
+  function isSafeDownloadHref(href) {
+    if (!href) return false;
+
+    try {
+      const url = new URL(href, window.location.origin);
+      const isSameOrigin = url.origin === window.location.origin;
+      const path = url.pathname.toLowerCase();
+      const looksLikeDownload = path.includes('download') || path.endsWith('.pdf');
+
+      return isSameOrigin && looksLikeDownload;
+    } catch {
+      return false;
+    }
+  }
+
+  // Reads and validates the configured delay, clamping it to a safe minimum.
+  // This prevents a corrupted or manually edited storage value (e.g. 0, a
+  // negative number, or a non-numeric value) from causing an unthrottled
+  // download loop.
+  function getSafeDelayMs() {
+    const raw = getSetting(STORAGE_KEYS.delayMs, config.defaultDelayMs);
+    const num = Number(raw);
+
+    if (!Number.isFinite(num) || num < config.minDelayMs) {
+      return config.minDelayMs;
+    }
+
+    return num;
   }
 
   function getVisibleRows() {
@@ -146,8 +184,16 @@
 
     if (isDebugEnabled()) {
       log('Row candidates:', candidates.map(describeElement));
-      log('Selected download link:', describeElement(directDownloadLink));
+      log('Selected download link (before safety check):', describeElement(directDownloadLink));
       log('Selected toggle button:', describeElement(findToggleButton(row)));
+    }
+
+    // Reject the candidate if it does not pass the same-origin / download-shape
+    // check, even if the text/aria heuristics matched. This is the second,
+    // independent gate before a click is ever triggered on this element.
+    if (directDownloadLink && !isSafeDownloadHref(directDownloadLink.getAttribute('href'))) {
+      warn('Rejected suspicious download candidate:', describeElement(directDownloadLink));
+      return null;
     }
 
     return directDownloadLink;
@@ -194,6 +240,13 @@
   async function executeDownload(doc) {
     if (!doc.linkElement) {
       throw new Error('No download link found for document.');
+    }
+
+    // Defense in depth: re-validate the href immediately before clicking,
+    // in case the DOM changed between detection and execution.
+    const href = doc.linkElement.getAttribute('href') || '';
+    if (!isSafeDownloadHref(href)) {
+      throw new Error('Download link failed the safety check right before execution.');
     }
 
     clickElement(doc.linkElement);
@@ -445,7 +498,8 @@
       return;
     }
 
-    const delayMs = getSetting(STORAGE_KEYS.delayMs, config.defaultDelayMs);
+    // Use the validated/clamped delay instead of the raw stored value.
+    const delayMs = getSafeDelayMs();
     const dryRun = getSetting(STORAGE_KEYS.dryRun, config.defaultDryRun);
 
     const docs = collectDocuments();
@@ -505,9 +559,12 @@
         );
       }
     } catch (err) {
+      // Log full technical details to the console only. The user-facing
+      // alert stays generic so internal implementation details (selectors,
+      // DOM structure, safety-check reasons) are not surfaced directly.
       console.error(`[${SCRIPT_NAME}] Error`, err);
       setStatus(`Error after ${state.processed}/${state.total}`, 'error');
-      alert(`Download error: ${err.message}`);
+      alert('An error occurred during download. Check the browser console for details.');
     } finally {
       const wasAborted = state.abortRequested;
 

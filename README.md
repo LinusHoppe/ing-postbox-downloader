@@ -2,7 +2,7 @@
 
 A userscript for **Firefox + Violentmonkey** that downloads all currently visible documents in the ING postbox one after another. The script is intended for local personal use and deliberately follows a minimal, understandable approach instead of relying on opaque third-party code.
 
-The current version uses a **native click on the existing download link** in each document row, because this approach works reliably in practice, while programmatic downloads can run into redirect or CORS-related issues with ING links.
+The current version uses a **native click on the existing download link** in each document row, because this approach works reliably in practice, while programmatic downloads can run into redirect or CORS-related issues with ING links. Every candidate link is additionally validated to be same-origin and download-shaped before it is ever clicked.
 
 ## Purpose
 
@@ -15,11 +15,12 @@ The project is explicitly focused on **self-development and transparency**. Publ
 - Download all currently visible documents in the postbox
 - Sequential execution instead of parallel downloads, so the browser and website are not overloaded with too many simultaneous actions
 - Dry-run mode to test document detection without triggering real downloads
-- Configurable delay between downloads
-- Debug logging for DOM analysis and troubleshooting
+- Configurable delay between downloads, with a built-in safety floor
+- Debug logging for DOM analysis and troubleshooting (disabled by default)
 - Automatic UI re-initialization when ING dynamically re-renders parts of the page
 - Clean injected control panel with English-only labels, tooltips, alerts, and log messages
 - Compact status badge for idle, running, success, warning, and error states
+- Same-origin and download-shape validation before any element is clicked
 
 ## Technical Approach
 
@@ -66,11 +67,11 @@ In dry-run mode, all visible documents are detected and processed logically with
 
 ### Delay
 
-The delay between two downloads can be configured. A small delay is useful so that the UI, Firefox, and the download manager can keep up cleanly.
+The delay between two downloads can be configured. A small delay is useful so that the UI, Firefox, and the download manager can keep up cleanly. As of version 0.6, any configured value below the internal safety floor (300 ms) is automatically raised to that floor before use, so a corrupted or manually edited setting cannot cause an unthrottled download loop.
 
 ### Debug Logs
 
-If **Debug logs** are enabled, the script writes additional information to the browser console. This is useful for analyzing DOM changes, selector issues, or elements that are no longer detected correctly.
+If **Debug logs** are enabled, the script writes additional information to the browser console, including document subjects, dates, and full URLs. This is useful for analyzing DOM changes, selector issues, or elements that are no longer detected correctly. As of version 0.6, debug logging is **disabled by default** and must be enabled explicitly in the panel.
 
 ### Status Badge
 
@@ -78,14 +79,14 @@ The injected panel includes a compact status badge that reflects the current scr
 
 ## UI Elements
 
-The script injects a small control panel into the postbox. As of version 0.5, it includes:
+The script injects a small control panel into the postbox. As of version 0.6, it includes:
 
 | Element | Function |
 |---|---|
 | Download all | Starts the sequential download of all visible documents. During execution, the same button is also used to abort the process. |
 | Dry run (no download) | Only verifies document detection without triggering actual downloads. |
-| Debug logs | Enables additional console output for analysis and troubleshooting. |
-| Delay (ms) | Defines the waiting time between two download actions. |
+| Debug logs | Enables additional console output for analysis and troubleshooting. Disabled by default. |
+| Delay (ms) | Defines the waiting time between two download actions. Values below 300 ms are automatically raised to that floor. |
 | Status badge | Shows the number of visible documents as well as progress, completion, cancellation, or error state. |
 
 ## Limitations
@@ -110,22 +111,24 @@ The project does not use an official ING API for documents. It automates only th
 
 Because the script interacts with sensitive banking data, it deliberately follows a **local and traceable approach**. It does not send data to third parties, does not use external tracking services, and only accesses the ING postbox already available in the logged-in browser context.
 
-Recommended security principles:
+### Recommended Security Principles
 
 - Only run code that is fully understood
 - Always test changes in dry-run mode first
 - When forking the code, keep the repository private if it contains internal adjustments or personal notes
-- Anonymize logs before sharing them, as document titles or metadata may be visible
+- Anonymize logs before sharing them, as document titles, dates, or URLs may be visible when debug logging is enabled
 - Keep the `@match` scope intentionally limited to the ING postbox
+- Keep `@grant` limited to the minimum required APIs (currently only `GM_getValue` and `GM_setValue`)
 
 ## Architecture
 
 The internal structure of the script is intentionally simple:
 
-- **Configuration**: selectors, defaults, and storage keys
+- **Configuration**: selectors, defaults, storage keys, and safety thresholds (minimum delay)
 - **State**: run status, abort flag, progress, observer references
 - **DOM detection**: collecting rows and finding the download link for each document
-- **Action**: native click on the detected element
+- **Safety checks**: same-origin and download-shape validation before and immediately before clicking
+- **Action**: native click on the validated element
 - **UI**: control panel with start, dry-run, debug, delay, tooltip, and status badge
 - **Reactivity**: `MutationObserver` to reattach the panel after DOM updates
 
@@ -134,9 +137,9 @@ The internal structure of the script is intentionally simple:
 1. After the page loads, the script tries to find the filter area as the UI anchor.
 2. It injects its own control panel there.
 3. When started, it collects all visible table rows.
-4. For each row, it identifies the download link.
-5. In real execution mode, it triggers a native click per document.
-6. Between two documents, it waits for the configured delay.
+4. For each row, it identifies the download link and validates it against the safety checks.
+5. In real execution mode, it re-validates the link and then triggers a native click per document.
+6. Between two documents, it waits for the configured (and clamped) delay.
 7. Clicking again sets an abort flag and stops the run cleanly after the current step.
 
 ## Persistent Settings
@@ -147,9 +150,9 @@ Currently stored values:
 
 | Key | Meaning |
 |---|---|
-| `ing.delayMs` | Delay between two downloads in milliseconds |
+| `ing.delayMs` | Delay between two downloads in milliseconds. Read through a validation helper that enforces a 300 ms minimum. |
 | `ing.dryRun` | Remembers whether dry-run was enabled last |
-| `ing.debug` | Remembers whether debug logging is enabled |
+| `ing.debug` | Remembers whether debug logging is enabled. Defaults to `false` as of version 0.6. |
 
 ## Debugging
 
@@ -157,9 +160,9 @@ Currently stored values:
 
 The most important source of diagnostics is the Firefox console. With debug mode enabled, it can show:
 
-- detected documents
+- detected documents, including subject, date, and full URL
 - detected link candidates per row
-- the selected download link
+- the selected download link, including rejections from the safety check
 - progress information
 - errors in click handling or DOM logic
 
@@ -171,7 +174,8 @@ If the script stops working after changes, these points should be checked first:
 2. Do the rows still match `.ibbr-table-body .ibbr-table-row`?
 3. Are the columns still direct children reachable via `:scope > span.ibbr-table-cell:not(:last-child)`?
 4. Does each document row still contain a clickable download link?
-5. Does a manual click on the same link still open a valid download?
+5. Does the download link's URL still contain `download` or end in `.pdf`, and is it still same-origin? If not, the safety check will reject it even though the row itself is detected correctly.
+6. Does a manual click on the same link still open a valid download?
 
 ### Typical Failure Patterns
 
@@ -180,6 +184,7 @@ If the script stops working after changes, these points should be checked first:
 | No button visible | UI anchor not found | Check whether `.account-filters` still exists |
 | Dry run finds 0 documents | Table or cell selectors no longer match | Inspect the DOM in Firefox DevTools |
 | Download does not start | ING changed link or event structure | Analyze link candidates with debug logs |
+| Link detected but rejected as "suspicious" | Link no longer matches the same-origin/download-shape check | Enable debug logs and check the warning for the rejected candidate; adjust `isSafeDownloadHref()` if the new link pattern is legitimate |
 | UI disappears after changing filters | DOM was dynamically re-rendered | Check observer and selector logic |
 
 ## Adapting to DOM Changes
@@ -190,6 +195,7 @@ If ING changes the UI, usually only a few areas are relevant:
 - `rowSelector`
 - `cellSelector`
 - detection logic in `findDownloadLink()`
+- the safety check in `isSafeDownloadHref()`, if the legitimate download URL pattern changes
 - possibly the selector for the **"More actions"** button
 
 The fastest way to find a new selector is via Firefox DevTools. In the Inspector, the relevant element can be selected and its CSS selector analyzed; for direct child elements inside a node, `:scope` is often the most robust choice.
@@ -212,6 +218,10 @@ The current version works without jQuery or additional UI libraries. This simpli
 
 All injected UI labels, tooltips, alerts, and log messages are in English. This keeps the script behavior and documentation aligned and makes the code easier to maintain in a single language.
 
+### Defense-in-Depth Click Validation
+
+Rather than trusting a single detection heuristic, the script validates candidate links twice: once when the document list is built, and again immediately before the click is executed. This two-step validation is intentional so that DOM changes between detection and execution cannot bypass the safety check.
+
 ## Development Notes
 
 For script changes, the following workflow is recommended:
@@ -219,9 +229,10 @@ For script changes, the following workflow is recommended:
 1. Apply changes locally in Violentmonkey.
 2. Reload the page.
 3. Enable dry-run.
-4. Watch the console.
-5. Only then run a real test with a small number of visible documents.
-6. Use it more broadly only after the test succeeds.
+4. Enable debug logs temporarily to verify detection and safety-check behavior.
+5. Watch the console.
+6. Only then run a real test with a small number of visible documents.
+7. Use it more broadly only after the test succeeds.
 
 If a change affects user-facing behavior, configuration, or visible UI text, the README should be updated in the same revision.
 
