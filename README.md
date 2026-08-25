@@ -1,241 +1,235 @@
 # ING Postbox Bulk Download
 
-Ein Userscript für **Firefox + Violentmonkey**, das alle aktuell sichtbaren Dokumente in der ING-Postbox nacheinander herunterlädt. Das Skript ist für den lokalen Eigengebrauch gedacht und setzt bewusst auf eine minimale, nachvollziehbare Logik statt auf fremden Blackbox-Code.
+A userscript for **Firefox + Violentmonkey** that downloads all currently visible documents in the ING postbox one after another. The script is intended for local personal use and deliberately follows a minimal, understandable approach instead of relying on opaque third-party code.
 
-Die aktuelle Version verwendet den **nativen Klick auf den vorhandenen Download-Link** pro Dokumentzeile, weil dieser Weg in der Praxis zuverlässig funktioniert, während programmatische Downloads bei ING-Links in Redirect-/CORS-Probleme laufen können.
+The current version uses a **native click on the existing download link** in each document row, because this approach works reliably in practice, while programmatic downloads can run into redirect or CORS-related issues with ING links.
 
-## Ziel
+## Purpose
 
-Die ING-Postbox bietet in der Oberfläche nur Einzel-Downloads je Dokument. Dieses Skript ergänzt in der Postbox einen Button, der alle **sichtbaren** Dokumente nacheinander herunterlädt, inklusive konfigurierbarer Verzögerung und Dry-Run-Modus zur sicheren Prüfung der Erkennung ohne echte Downloads.
+The ING postbox UI only provides single-document downloads. This script adds a button to the postbox that downloads all **visible** documents one after another, including a configurable delay and a dry-run mode to safely verify document detection without triggering actual downloads.
 
-Das Projekt ist ausdrücklich auf **Selbstentwicklung und Transparenz** ausgerichtet. Öffentliche Vorlagen waren nur Ausgangspunkt zur Orientierung; die eigentliche Weiterentwicklung soll lokal kontrollierbar, lesbar und anpassbar bleiben.
+The project is explicitly focused on **self-development and transparency**. Public examples were only used as initial inspiration; the actual implementation is meant to remain locally controlled, readable, and easy to adapt.
 
-## Funktionsumfang
+## Features
 
-- Download aller aktuell sichtbaren Dokumente in der Postbox
-- Nacheinander statt parallel, damit Browser und Website nicht mit vielen gleichzeitigen Aktionen belastet werden
-- Dry-Run-Modus zum Testen der Dokumenterkennung ohne echten Download
-- Einstellbare Wartezeit zwischen zwei Downloads
-- Debug-Logging für DOM-Analyse und Fehlersuche
-- Automatische Re-Initialisierung der UI, wenn ING Teile der Oberfläche dynamisch neu rendert
+- Download all currently visible documents in the postbox
+- Sequential execution instead of parallel downloads, so the browser and website are not overloaded with too many simultaneous actions
+- Dry-run mode to test document detection without triggering real downloads
+- Configurable delay between downloads
+- Debug logging for DOM analysis and troubleshooting
+- Automatic UI re-initialization when ING dynamically re-renders parts of the page
 
-## Technischer Ansatz
+## Technical Approach
 
-Das Skript läuft als Violentmonkey-Userscript direkt im Browser auf den ING-Postbox-Seiten.
+The script runs as a Violentmonkey userscript directly in the browser on the ING postbox pages.
 
-Die Dokumentzeilen werden per DOM-Selektoren gesammelt und innerhalb jeder Zeile wird der vorhandene Download-Link identifiziert. Für direkte Kindselektoren innerhalb einer Zeile wird `:scope` verwendet, damit die Selektion sauber relativ zum aktuellen Element funktioniert.
+Document rows are collected using DOM selectors, and the existing download link is identified within each row. For direct child selectors inside a row, `:scope` is used so that selection remains correctly relative to the current element.
 
-Der eigentliche Download erfolgt nicht über `fetch()`, sondern über einen nativen Klick auf das gefundene Element. Das passt besser zum UI-gesteuerten Workflow der ING-Postbox.
+The actual download is not triggered via `fetch()`, but through a native click on the detected element. This matches the UI-driven workflow of the ING postbox more reliably.
 
-## Warum kein Dateiname-Template?
+## Requirements
 
-Frühere Varianten hatten eine Logik zur Umbenennung der Dateien. Diese wurde bewusst entfernt, weil sich gezeigt hat, dass der stabile Download-Pfad über den nativen Browser-Klick läuft und dabei der endgültige Dateiname vom Server-Response bzw. vom Browser-Downloadpfad bestimmt wird.
+To use the script, the following is required:
 
-Kurz gesagt: **stabiler Download** war wichtiger als **künstliche Umbenennung**.
-
-## Voraussetzungen
-
-Für den Einsatz werden benötigt:
-
-- Firefox als Browser
-- Die Erweiterung Violentmonkey für Firefox
-- Ein lokal installiertes Userscript aus diesem Repository
-- Ein eingeloggter Zugriff auf die ING-Postbox
+- Firefox as the browser
+- The Violentmonkey extension for Firefox
+- A locally installed userscript from this repository
+- A logged-in ING postbox session
 
 ## Installation
 
-1. Violentmonkey in Firefox installieren.
-2. Ein neues Userscript in Violentmonkey anlegen oder die `.user.js`-Datei aus diesem Repository importieren.
-3. Das Skript speichern.
-4. Die ING-Postbox öffnen oder neu laden.
-5. Prüfen, ob unterhalb des Filterbereichs ein zusätzlicher Button **„Alle herunterladen“** erscheint.
+1. Install Violentmonkey in Firefox.
+2. Create a new userscript in Violentmonkey or import the `.user.js` file from this repository.
+3. Save the script.
+4. Open or reload the ING postbox.
+5. Check whether an additional **"Download all"** button appears below the filter area.
 
-## Verwendung
+## Usage
 
-### Normaler Ablauf
+### Normal Workflow
 
-1. In der ING-Postbox die gewünschte Liste anzeigen, also z. B. nach Zeitraum oder Dokumenttyp filtern.
-2. Optional zuerst den Dry-Run aktivieren.
-3. Auf **„Alle herunterladen“** klicken.
-4. Das Skript arbeitet die aktuell sichtbaren Dokumente nacheinander ab.
-5. Ein erneuter Klick auf denselben Button bricht den Vorgang ab.
+1. Open the desired list in the ING postbox, for example by filtering by date range or document type.
+2. Optionally enable dry-run first.
+3. Click **"Download all"**.
+4. The script processes all currently visible documents one after another.
+5. Clicking the same button again aborts the process.
 
-Wichtig: Das Skript verarbeitet nur **die aktuell sichtbaren Dokumente**. Es führt bewusst keine Pagination und kein automatisches Nachladen weiterer Seiten aus.
+Important: The script only processes **currently visible documents**. It intentionally does not perform pagination or automatically load additional pages.
 
-### Dry-Run
+### Dry Run
 
-Im Dry-Run werden alle sichtbaren Dokumente erkannt und in der Logik durchlaufen, ohne echte Downloads auszulösen. Das ist der empfohlene erste Test nach Änderungen an Selektoren oder interner Logik.
+In dry-run mode, all visible documents are detected and processed logically without triggering real downloads. This is the recommended first test after changing selectors or internal logic.
 
 ### Delay
 
-Die Wartezeit zwischen zwei Downloads lässt sich konfigurieren. Eine kleine Verzögerung ist sinnvoll, damit die Oberfläche, Firefox und der Download-Manager sauber Schritt halten.
+The delay between two downloads can be configured. A small delay is useful so that the UI, Firefox, and the download manager can keep up cleanly.
 
-### Debug-Logs
+### Debug Logs
 
-Wenn **Debug-Logs** aktiviert sind, schreibt das Skript zusätzliche Informationen in die Browser-Konsole. Das ist hilfreich, um DOM-Änderungen, Selektor-Probleme oder nicht erkannte Elemente zu analysieren.
+If **Debug Logs** are enabled, the script writes additional information to the browser console. This is useful for analyzing DOM changes, selector issues, or elements that are no longer detected correctly.
 
-## UI-Elemente
+## UI Elements
 
-Das Skript blendet ein kleines Bedienfeld in der Postbox ein. Der aktuelle Stand von Version 0.3 umfasst:
+The script injects a small control panel into the postbox. As of version 0.3, it includes:
 
-| Element | Funktion |
+| Element | Function |
 |---|---|
-| Alle herunterladen | Startet den sequentiellen Download aller sichtbaren Dokumente. Während der Ausführung dient derselbe Button auch zum Abbrechen. |
-| Dry-Run (kein Download) | Prüft nur die Erkennung der Dokumente, ohne echte Downloads auszulösen. |
-| Debug-Logs | Aktiviert zusätzliche Konsolenausgaben für Analyse und Fehlersuche. |
-| Delay (ms) | Definiert die Wartezeit zwischen zwei Download-Aktionen. |
-| Statuszeile | Zeigt Anzahl sichtbarer Dokumente sowie Fortschritt, Abschluss oder Abbruch an. |
+| Download all | Starts the sequential download of all visible documents. During execution, the same button is also used to abort the process. |
+| Dry-run (no download) | Only verifies document detection without triggering actual downloads. |
+| Debug Logs | Enables additional console output for analysis and troubleshooting. |
+| Delay (ms) | Defines the waiting time between two download actions. |
+| Status line | Shows the number of visible documents as well as progress, completion, or cancellation state. |
 
-## Einschränkungen
+## Limitations
 
-### Nur sichtbare Dokumente
+### Visible Documents Only
 
-Das Skript lädt nur die Dokumente herunter, die auf der aktuellen Seite sichtbar sind. Das ist Absicht, damit die Logik vorhersehbar bleibt und nicht unbemerkt durch weitere Seiten navigiert.
+The script only downloads the documents that are visible on the current page. This is intentional so that the logic remains predictable and does not silently navigate through additional pages.
 
-### Abhängigkeit vom DOM
+### DOM Dependency
 
-Das Skript ist an die aktuelle HTML-Struktur der ING-Postbox gebunden. Wenn ING Klassennamen, Button-Struktur, Tabellenaufbau oder dynamische Renderlogik ändert, müssen Selektoren oder Erkennungslogik angepasst werden.
+The script depends on the current HTML structure of the ING postbox. If ING changes class names, button structure, table layout, or dynamic rendering behavior, selectors or detection logic may need to be updated.
 
-### Kein garantierter Dateiname
+### No Guaranteed File Name
 
-Der Browser bzw. die Server-Antwort bestimmt den finalen Dateinamen. Eine freie Umbenennung wurde aus Stabilitätsgründen nicht weiterverfolgt.
+The browser or server response determines the final file name. Free renaming was intentionally not pursued further for stability reasons.
 
-### Kein API-Ansatz
+### No API-Based Approach
 
-Das Projekt verwendet keine offizielle ING-API für Dokumente. Es automatisiert ausschließlich die vorhandene Web-Oberfläche, also einen UI-Workflow im eingeloggten Browser-Kontext.
+The project does not use an official ING API for documents. It automates only the existing web interface, meaning a UI-based workflow inside a logged-in browser session.
 
-## Sicherheit
+## Security
 
-Das Skript ist für sensible Bankdaten bewusst auf einen **lokalen, nachvollziehbaren Ansatz** reduziert. Es sendet keine Daten an Dritte, verwendet keine externen Tracking-Dienste und greift nur auf die im eingeloggten Browserkontext vorhandene ING-Postbox zu.
+Because the script interacts with sensitive banking data, it deliberately follows a **local and traceable approach**. It does not send data to third parties, does not use external tracking services, and only accesses the ING postbox already available in the logged-in browser context.
 
-Empfohlene Sicherheitsprinzipien:
+Recommended security principles:
 
-- Nur selbst verstandenen Code ausführen
-- Änderungen immer zuerst im Dry-Run testen
-- Das Repository privat halten, wenn interne Anpassungen oder persönliche Hinweise enthalten sind
-- Logs vor dem Teilen anonymisieren, da Dokumenttitel oder Metadaten sichtbar sein können
-- Den `@match`-Bereich bewusst eng auf die ING-Postbox beschränken
+- Only run code that is fully understood
+- Always test changes in dry-run mode first
+- When forking the code, keep the repository private if it contains internal adjustments or personal notes
+- Anonymize logs before sharing them, as document titles or metadata may be visible
+- Keep the `@match` scope intentionally limited to the ING postbox
 
-## Architektur
+## Architecture
 
-Die interne Struktur des Skripts ist bewusst einfach gehalten:
+The internal structure of the script is intentionally simple:
 
-- **Konfiguration**: Selektoren, Defaults und Storage-Keys
-- **State**: Laufstatus, Abbruchflag, Fortschritt, Observer-Referenzen
-- **DOM-Erkennung**: Sammeln der Zeilen und Finden des Download-Links pro Dokument
-- **Aktion**: Nativer Klick auf das gefundene Element
-- **UI**: Bedienfeld mit Start, Dry-Run, Debug und Delay
-- **Reaktivität**: `MutationObserver`, um das Panel nach DOM-Updates wieder korrekt einzubinden
+- **Configuration**: selectors, defaults, and storage keys
+- **State**: run status, abort flag, progress, observer references
+- **DOM detection**: collecting rows and finding the download link for each document
+- **Action**: native click on the detected element
+- **UI**: control panel with start, dry-run, debug, and delay options
+- **Reactivity**: `MutationObserver` to reattach the panel after DOM updates
 
-## Typischer Ablauf im Code
+## Typical Code Flow
 
-1. Nach dem Laden der Seite versucht das Skript, den Filterbereich als UI-Anker zu finden.
-2. Dort wird das eigene Bedienfeld eingefügt.
-3. Beim Start werden alle sichtbaren Tabellenzeilen gesammelt.
-4. Pro Zeile wird der Download-Link identifiziert.
-5. Im Echtbetrieb wird pro Dokument ein nativer Klick ausgelöst.
-6. Zwischen zwei Dokumenten wartet das Skript die konfigurierte Zeit.
-7. Ein erneuter Klick setzt ein Abbruch-Flag und beendet den Lauf sauber nach dem aktuellen Schritt.
+1. After the page loads, the script tries to find the filter area as the UI anchor.
+2. It injects its own control panel there.
+3. When started, it collects all visible table rows.
+4. For each row, it identifies the download link.
+5. In real execution mode, it triggers a native click per document.
+6. Between two documents, it waits for the configured delay.
+7. Clicking again sets an abort flag and stops the run cleanly after the current step.
 
-## Persistente Einstellungen
+## Persistent Settings
 
-Die Benutzereinstellungen werden im Userscript-Speicher abgelegt.
+User settings are stored in the userscript storage.
 
-Gespeichert werden aktuell:
+Currently stored values:
 
-| Schlüssel | Bedeutung |
+| Key | Meaning |
 |---|---|
-| `ing.delayMs` | Verzögerung zwischen zwei Downloads in Millisekunden |
-| `ing.dryRun` | Merkt, ob der Dry-Run zuletzt aktiviert war |
-| `ing.debug` | Merkt, ob Debug-Logging aktiv ist |
+| `ing.delayMs` | Delay between two downloads in milliseconds |
+| `ing.dryRun` | Remembers whether dry-run was enabled last |
+| `ing.debug` | Remembers whether debug logging is enabled |
 
 ## Debugging
 
-### Browser-Konsole
+### Browser Console
 
-Die wichtigste Diagnosequelle ist die Firefox-Konsole. Dort erscheinen bei aktiviertem Debug-Modus unter anderem:
+The most important source of diagnostics is the Firefox console. With debug mode enabled, it can show:
 
-- gefundene Dokumente
-- erkannte Link-Kandidaten pro Zeile
-- der ausgewählte Download-Link
-- Fortschrittsinformationen
-- Fehler beim Klick- oder DOM-Ablauf
+- detected documents
+- detected link candidates per row
+- the selected download link
+- progress information
+- errors in click handling or DOM logic
 
-### Wichtige Prüfpunkte
+### Important Checks
 
-Wenn das Skript nach Änderungen nicht mehr funktioniert, sollten zuerst diese Punkte geprüft werden:
+If the script stops working after changes, these points should be checked first:
 
-1. Gibt es noch einen passenden UI-Anker unter `.account-filters`?
-2. Stimmen die Zeilen noch mit `.ibbr-table-body .ibbr-table-row` überein?
-3. Sind die Spalten weiterhin direkte Kinder, die über `:scope > span.ibbr-table-cell:not(:last-child)` erreichbar sind?
-4. Existiert in jeder Dokumentzeile weiterhin ein anklickbarer Download-Link?
-5. Öffnet ein manueller Klick auf denselben Link noch einen gültigen Download?
+1. Is there still a valid UI anchor under `.account-filters`?
+2. Do the rows still match `.ibbr-table-body .ibbr-table-row`?
+3. Are the columns still direct children reachable via `:scope > span.ibbr-table-cell:not(:last-child)`?
+4. Does each document row still contain a clickable download link?
+5. Does a manual click on the same link still open a valid download?
 
-### Typische Fehlerbilder
+### Typical Failure Patterns
 
-| Problem | Wahrscheinliche Ursache | Hinweis |
+| Problem | Likely Cause | Hint |
 |---|---|---|
-| Kein Button sichtbar | UI-Anker nicht gefunden | Prüfen, ob `.account-filters` noch existiert |
-| Dry-Run findet 0 Dokumente | Tabellen- oder Zellselektoren passen nicht mehr | DOM in Firefox Inspector prüfen |
-| Download startet nicht | ING hat Link- oder Event-Struktur geändert | Link-Kandidaten mit Debug-Logs analysieren |
-| UI verschwindet nach Filterwechsel | DOM wurde dynamisch neu gerendert | Observer- und Selektor-Logik prüfen |
+| No button visible | UI anchor not found | Check whether `.account-filters` still exists |
+| Dry-run finds 0 documents | Table or cell selectors no longer match | Inspect the DOM in Firefox DevTools |
+| Download does not start | ING changed link or event structure | Analyze link candidates with debug logs |
+| UI disappears after changing filters | DOM was dynamically re-rendered | Check observer and selector logic |
 
-## Anpassung an DOM-Änderungen
+## Adapting to DOM Changes
 
-Wenn ING die Oberfläche ändert, sind normalerweise nur wenige Bereiche relevant:
+If ING changes the UI, usually only a few areas are relevant:
 
 - `uiAnchorSelector`
 - `rowSelector`
 - `cellSelector`
-- Erkennungslogik in `findDownloadLink()`
-- eventuell der Selektor für den Button **„Weitere Funktionen“**
+- detection logic in `findDownloadLink()`
+- possibly the selector for the **"More actions"** button
 
-Am schnellsten findet sich ein neuer Selektor über die Firefox-DevTools. Per Inspector lässt sich das relevante Element auswählen und der CSS-Selektor analysieren; für direkte Kindelemente innerhalb eines Knotens ist `:scope` oft die robusteste Variante.
+The fastest way to find a new selector is via Firefox DevTools. In the Inspector, the relevant element can be selected and its CSS selector analyzed; for direct child elements inside a node, `:scope` is often the most robust choice.
 
-## Bekannte Designentscheidungen
+## Known Design Decisions
 
-### Keine Pagination
+### No Pagination
 
-Das Skript verarbeitet nur die aktuelle Ansicht. Das vermeidet zusätzliche Navigationslogik, Wartezustände, Seitenwechsel und schwer nachvollziehbare Fehlerketten.
+The script only processes the current view. This avoids additional navigation logic, waiting states, page changes, and harder-to-trace error chains.
 
-### Keine Dateiumbenennung
+### No File Renaming
 
-Der Name wird vom Browser bzw. Server akzeptiert, nicht künstlich überschrieben. Das erhöht die Zuverlässigkeit des eigentlichen Download-Vorgangs.
+The file name is accepted as provided by the browser or server, not artificially overridden. This improves the reliability of the actual download process.
 
-### Keine externen Laufzeit-Abhängigkeiten
+### No External Runtime Dependencies
 
-Die aktuelle Fassung kommt ohne jQuery oder zusätzliche UI-Bibliotheken aus. Das vereinfacht Wartung, Debugging und Kontrolle über den ausgeführten Code.
+The current version works without jQuery or additional UI libraries. This simplifies maintenance, debugging, and control over the executed code.
 
-## Entwicklungshinweise
+## Development Notes
 
-Für Änderungen am Skript empfiehlt sich dieser Ablauf:
+For script changes, the following workflow is recommended:
 
-1. Änderungen lokal in Violentmonkey einpflegen.
-2. Seite neu laden.
-3. Dry-Run aktivieren.
-4. Konsole beobachten.
-5. Erst danach mit wenigen sichtbaren Dokumenten einen echten Test ausführen.
-6. Erst nach erfolgreichem Test breiter einsetzen.
+1. Apply changes locally in Violentmonkey.
+2. Reload the page.
+3. Enable dry-run.
+4. Watch the console.
+5. Only then run a real test with a small number of visible documents.
+6. Use it more broadly only after the test succeeds.
 
-## Nicht-Ziele
+## Non-Goals
 
-Dieses Projekt verfolgt bewusst **nicht** diese Ziele:
+This project deliberately does **not** aim for:
 
-- vollständige Archiv-Synchronisation
-- serverseitige Automatisierung
-- Nutzung einer offiziellen oder inoffiziellen Backend-API
-- Umbenennung erzwingen um jeden Preis
-- Mehrbenutzer- oder Mandantenbetrieb
-- Browser-übergreifende Spezialanpassungen außerhalb von Firefox
+- full archive synchronization
+- server-side automation
+- usage of an official or unofficial backend API
+- forcing file renaming at all costs
+- multi-user or multi-tenant support
+- browser-specific adaptations outside Firefox
 
-## Herkunft und Einordnung
+## Origin and Context
 
-Die Grundidee ist nicht neu; rund um die ING-Postbox existieren öffentliche Beispiele und Blogbeiträge zu Batch-Downloads per Userscript.
+The basic idea is not new; there are public examples and blog posts around batch downloading from the ING postbox using userscripts.
 
-Diese Implementierung versteht sich jedoch als **eigene, reduzierte und lokal kontrollierte Variante** für den privaten Einsatz.
+This implementation should nevertheless be understood as an **independent, reduced, and locally controlled variant** for private use.
 
-## Haftungsausschluss
+## Disclaimer
 
-Die Nutzung erfolgt auf eigenes Risiko. Das Skript ist ein nicht offizielles Hilfsmittel zur Browser-Automatisierung und steht in keiner Verbindung zur ING. Änderungen an der Website können die Funktion jederzeit beeinflussen.
+Use at your own risk. The script is an unofficial browser automation helper and is not affiliated with ING. Changes to the website may affect functionality at any time.
 
-Vor produktiver Nutzung sollte das Verhalten immer mit wenigen Dokumenten getestet werden. Besonders bei Bankdokumenten sind Vorsicht, lokale Kontrolle und ein bewusst enger Einsatzbereich sinnvoll.
+Before using it productively, the behavior should always be tested with a small number of documents first. Especially for banking documents, caution, local control, and a deliberately narrow scope are strongly recommended.
