@@ -2,7 +2,7 @@
 
 A userscript for **Firefox + Violentmonkey** that downloads all currently visible documents in the ING postbox one after another. The script is intended for local personal use and deliberately follows a minimal, understandable approach instead of relying on opaque third-party code.
 
-The current version uses a **native click on the existing download link** in each document row, because this approach works reliably in practice, while programmatic downloads can run into redirect or CORS-related issues with ING links. Every candidate link is additionally validated to be same-origin and download-shaped before it is ever clicked.
+The current version uses a **native click on the existing download link** in each document row, because this approach works reliably in practice, while programmatic downloads can run into redirect or CORS-related issues with ING links. Every candidate link is additionally validated to be same-origin and document-shaped before it is ever clicked.
 
 ## Purpose
 
@@ -20,7 +20,7 @@ The project is explicitly focused on **self-development and transparency**. Publ
 - Automatic UI re-initialization when ING dynamically re-renders parts of the page
 - Clean injected control panel with English-only labels, tooltips, alerts, and log messages
 - Compact status badge for idle, running, success, warning, and error states
-- Same-origin and download-shape validation before any element is clicked
+- Same-origin and document-shape validation before any element is clicked
 
 ## Technical Approach
 
@@ -67,11 +67,11 @@ In dry-run mode, all visible documents are detected and processed logically with
 
 ### Delay
 
-The delay between two downloads can be configured. A small delay is useful so that the UI, Firefox, and the download manager can keep up cleanly. As of version 0.6, any configured value below the internal safety floor (300 ms) is automatically raised to that floor before use, so a corrupted or manually edited setting cannot cause an unthrottled download loop.
+The delay between two downloads can be configured. A small delay is useful so that the UI, Firefox, and the download manager can keep up cleanly. Any configured value below the internal safety floor (300 ms) is automatically raised to that floor before use, so a corrupted or manually edited setting cannot cause an unthrottled download loop.
 
 ### Debug Logs
 
-If **Debug logs** are enabled, the script writes additional information to the browser console, including document subjects, dates, and full URLs. This is useful for analyzing DOM changes, selector issues, or elements that are no longer detected correctly. As of version 0.6, debug logging is **disabled by default** and must be enabled explicitly in the panel.
+If **Debug logs** are enabled, the script writes additional information to the browser console, including document subjects, dates, and full URLs. This is useful for analyzing DOM changes, selector issues, or elements that are no longer detected correctly. Debug logging is **disabled by default** and must be enabled explicitly in the panel.
 
 ### Status Badge
 
@@ -79,7 +79,7 @@ The injected panel includes a compact status badge that reflects the current scr
 
 ## UI Elements
 
-The script injects a small control panel into the postbox. As of version 0.6, it includes:
+The script injects a small control panel into the postbox. It includes:
 
 | Element | Function |
 |---|---|
@@ -124,10 +124,10 @@ Because the script interacts with sensitive banking data, it deliberately follow
 
 The internal structure of the script is intentionally simple:
 
-- **Configuration**: selectors, defaults, storage keys, and safety thresholds (minimum delay)
+- **Configuration**: selectors, defaults, storage keys, and safety thresholds (minimum delay, allowed href keywords)
 - **State**: run status, abort flag, progress, observer references
 - **DOM detection**: collecting rows and finding the download link for each document
-- **Safety checks**: same-origin and download-shape validation before and immediately before clicking
+- **Safety checks**: same-origin and document-shape validation before and immediately before clicking
 - **Action**: native click on the validated element
 - **UI**: control panel with start, dry-run, debug, delay, tooltip, and status badge
 - **Reactivity**: `MutationObserver` to reattach the panel after DOM updates
@@ -152,7 +152,7 @@ Currently stored values:
 |---|---|
 | `ing.delayMs` | Delay between two downloads in milliseconds. Read through a validation helper that enforces a 300 ms minimum. |
 | `ing.dryRun` | Remembers whether dry-run was enabled last |
-| `ing.debug` | Remembers whether debug logging is enabled. Defaults to `false` as of version 0.6. |
+| `ing.debug` | Remembers whether debug logging is enabled. Defaults to `false`. |
 
 ## Debugging
 
@@ -174,7 +174,7 @@ If the script stops working after changes, these points should be checked first:
 2. Do the rows still match `.ibbr-table-body .ibbr-table-row`?
 3. Are the columns still direct children reachable via `:scope > span.ibbr-table-cell:not(:last-child)`?
 4. Does each document row still contain a clickable download link?
-5. Does the download link's URL still contain `download` or end in `.pdf`, and is it still same-origin? If not, the safety check will reject it even though the row itself is detected correctly.
+5. Does the download link's href still match one of the allowed keywords in `config.downloadHrefKeywords`, and is it still same-origin? If not, the safety check will reject it even though the row itself is detected correctly.
 6. Does a manual click on the same link still open a valid download?
 
 ### Typical Failure Patterns
@@ -184,7 +184,8 @@ If the script stops working after changes, these points should be checked first:
 | No button visible | UI anchor not found | Check whether `.account-filters` still exists |
 | Dry run finds 0 documents | Table or cell selectors no longer match | Inspect the DOM in Firefox DevTools |
 | Download does not start | ING changed link or event structure | Analyze link candidates with debug logs |
-| Link detected but rejected as "suspicious" | Link no longer matches the same-origin/download-shape check | Enable debug logs and check the warning for the rejected candidate; adjust `isSafeDownloadHref()` if the new link pattern is legitimate |
+| Visible documents shows 0 despite documents being present | Safety check rejects a legitimate link because its href does not match any allowed keyword | Enable debug logs, check the warning for the rejected candidate, and add the missing keyword to `config.downloadHrefKeywords` |
+| Link detected but rejected as "suspicious" | Link no longer matches the same-origin/document-shape check | Enable debug logs and check the warning for the rejected candidate; adjust `config.downloadHrefKeywords` or `isSafeDownloadHref()` if the new link pattern is legitimate |
 | UI disappears after changing filters | DOM was dynamically re-rendered | Check observer and selector logic |
 
 ## Adapting to DOM Changes
@@ -195,7 +196,7 @@ If ING changes the UI, usually only a few areas are relevant:
 - `rowSelector`
 - `cellSelector`
 - detection logic in `findDownloadLink()`
-- the safety check in `isSafeDownloadHref()`, if the legitimate download URL pattern changes
+- the keyword list in `config.downloadHrefKeywords`, if legitimate document URLs no longer match
 - possibly the selector for the **"More actions"** button
 
 The fastest way to find a new selector is via Firefox DevTools. In the Inspector, the relevant element can be selected and its CSS selector analyzed; for direct child elements inside a node, `:scope` is often the most robust choice.
@@ -221,6 +222,10 @@ All injected UI labels, tooltips, alerts, and log messages are in English. This 
 ### Defense-in-Depth Click Validation
 
 Rather than trusting a single detection heuristic, the script validates candidate links twice: once when the document list is built, and again immediately before the click is executed. This two-step validation is intentional so that DOM changes between detection and execution cannot bypass the safety check.
+
+### Broad Keyword Matching Over Strict Pattern Matching
+
+The safety check intentionally uses a keyword list instead of a single strict pattern. A narrower check initially caused legitimate ING document links to be rejected, resulting in valid documents disappearing from the visible list. The same-origin requirement remains strict; only the content-matching side favors a broader, less brittle keyword list to reduce false negatives, since it is not the primary security boundary.
 
 ## Development Notes
 

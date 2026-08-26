@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ING Postbox Bulk Download
 // @namespace    local.ing.postbox.bulkdownload
-// @version      0.6.0
+// @version      0.6.1
 // @description  Sequentially download all visible documents from the ING Postbox
 // @match        https://banking.ing.de/app/postbox/postbox*
 // @match        https://banking.ing.de/app/postbox/postbox_archiv*
@@ -39,6 +39,23 @@
     maxBootstrapAttempts: 40,
     bootstrapIntervalMs: 1000,
     mutationDebounceMs: 600,
+    // Keywords that are allowed to appear in a same-origin href for it to be
+    // treated as a legitimate document link. This list was broadened in
+    // v0.6.1 because the original "download" / ".pdf" only check rejected
+    // ING's actual document endpoints (e.g. opaque REST paths without
+    // "download" in the URL), causing valid documents to disappear from
+    // the visible document count entirely.
+    downloadHrefKeywords: [
+      'download',
+      '.pdf',
+      'document',
+      'postbox',
+      'content',
+      'anhang',
+      'anlage',
+      'beleg',
+      'file',
+    ],
   };
 
   const state = {
@@ -99,19 +116,32 @@
   }
 
   // Validates that a candidate href is same-origin and structurally looks like
-  // a document download, instead of trusting text/aria heuristics alone.
+  // a document-related link, instead of trusting text/aria heuristics alone.
   // This guards against accidentally clicking a destructive or unrelated
   // action if ING changes wording, icons, or link structure in the postbox UI.
+  //
+  // v0.6.1 fix: the v0.6.0 check only accepted paths containing "download"
+  // or ending in ".pdf". ING's real document links did not match either
+  // pattern, so every candidate was rejected and documents disappeared from
+  // the visible list entirely. The keyword list is now broader and matches
+  // against the full href (path + query string), not just the path.
   function isSafeDownloadHref(href) {
     if (!href) return false;
 
     try {
       const url = new URL(href, window.location.origin);
       const isSameOrigin = url.origin === window.location.origin;
-      const path = url.pathname.toLowerCase();
-      const looksLikeDownload = path.includes('download') || path.endsWith('.pdf');
 
-      return isSameOrigin && looksLikeDownload;
+      if (!isSameOrigin) {
+        return false;
+      }
+
+      const haystack = (url.pathname + url.search).toLowerCase();
+      const looksLikeDocumentLink = config.downloadHrefKeywords.some(
+        keyword => haystack.includes(keyword)
+      );
+
+      return looksLikeDocumentLink;
     } catch {
       return false;
     }
@@ -188,7 +218,7 @@
       log('Selected toggle button:', describeElement(findToggleButton(row)));
     }
 
-    // Reject the candidate if it does not pass the same-origin / download-shape
+    // Reject the candidate if it does not pass the same-origin / document-shape
     // check, even if the text/aria heuristics matched. This is the second,
     // independent gate before a click is ever triggered on this element.
     if (directDownloadLink && !isSafeDownloadHref(directDownloadLink.getAttribute('href'))) {
